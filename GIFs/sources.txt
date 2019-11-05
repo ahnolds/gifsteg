@@ -1,0 +1,9 @@
+cat.gif:       https://giphy.com/gifs/nfl-sports-football-sport-YnTh7YviNOJxWSepaP
+cat2.gif:      https://giphy.com/gifs/JIX9t2j0ZTN9S
+obama.gif:     https://giphy.com/gifs/barack-obama-2008-nov-4-LnjFr2JQo0fbx00CPf
+snow.gif:      https://giphy.com/gifs/justin-g-snow-dive-l2JIaYp6P3WT5Ybu0
+forensics.gif: https://giphy.com/gifs/inside-dna-fights-1tj0gXLT81yHS
+csi.gif:       https://giphy.com/gifs/scene-csi-scientists-anUbc9xThm2A
+smh.gif:       https://giphy.com/gifs/foxadhd-smh-reaction-artists-on-tumblr-8ZQFMFcJbPnMc\
+heart.gif:     https://giphy.com/gifs/cute-cartoon-blow-kiss-U2AH7M3nag85Ko4wVl
+batman.gif:    https://giphy.com/gifs/26tPskka6guetcHle
