@@ -62,7 +62,8 @@ def main():
         import extension
         module = extension
     elif args.lsb:
-        raise NotImplementedError('LSB steganography not yet implemented')
+        import lsb
+        module = lsb
     elif args.shuffle:
         raise NotImplementedError('Shuffle steganography not yet implemented')
     else:

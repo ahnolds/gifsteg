@@ -1,5 +1,5 @@
 """
-The Custom Extension Block implementation of the GIF steganography suite
+The LSB implementation of the GIF steganography suite
 """
 
 import struct
@@ -28,25 +28,42 @@ def copy_blocks(in_f, out_f):
         if block_size == 0:
             break
 
-def hide_data(out_f, data):
+def hide_data(in_f, out_f, has_ct, ct_size, data):
     """
-    Insert the data into the output file
+    Insert the data into the color table and write to the output file
     """
-    # Use an Extension Block with a label of 0x99
-    out_f.write(bytes([0x21, 0x99]))
-    # Write out as blocks of length up to 255
-    while len(data) > 255:
-        out_f.write(bytes([255]))
-        out_f.write(data[:255])
-        data = data[255:]
-    out_f.write(bytes([len(data)]))
-    out_f.write(data)
-    # Finish the Extension Block with a block of length 0
-    out_f.write(bytes([0]))
+    if has_ct:
+        true_ct_size = 3 * (2 ** (ct_size + 1))
+        ct = bytearray(in_f.read(true_ct_size))
+        if len(ct) != true_ct_size:
+            raise RuntimeError('The Color Table is shorter than specified')
+
+        # Insert as much data into the Color Table as possible
+        # Use only one-byte chunks to avoid complication, so a 15 byte color table will
+        # contain one byte of data across the first 8 bytes and no data in the last 7
+        num_bytes = min(true_ct_size // 8, len(data))
+        for index, byte in enumerate(data[:num_bytes]):
+            ct[index * 8 + 0] = (ct[index * 8 + 0] & 0b11111110) | ((byte & 0b10000000) >> 7)
+            ct[index * 8 + 1] = (ct[index * 8 + 1] & 0b11111110) | ((byte & 0b01000000) >> 6)
+            ct[index * 8 + 2] = (ct[index * 8 + 2] & 0b11111110) | ((byte & 0b00100000) >> 5)
+            ct[index * 8 + 3] = (ct[index * 8 + 3] & 0b11111110) | ((byte & 0b00010000) >> 4)
+            ct[index * 8 + 4] = (ct[index * 8 + 4] & 0b11111110) | ((byte & 0b00001000) >> 3)
+            ct[index * 8 + 5] = (ct[index * 8 + 5] & 0b11111110) | ((byte & 0b00000100) >> 2)
+            ct[index * 8 + 6] = (ct[index * 8 + 6] & 0b11111110) | ((byte & 0b00000010) >> 1)
+            ct[index * 8 + 7] = (ct[index * 8 + 7] & 0b11111110) | ((byte & 0b00000001) >> 0)
+
+        # Write out the modified Color Table
+        out_f.write(ct)
+
+        # Return the number of bytes written into the Color Table
+        return num_bytes
+    else:
+        # No Color Table => No space to hide stuff
+        return 0
 
 def steg(in_path, out_path, data):
     """
-    The steg function (add an extension block with the data)
+    The steg function (use the LSB of the color table entries to hide the data)
     """
     with open(in_path, 'rb') as in_f:
         with open(out_path, 'wb') as out_f:
@@ -71,15 +88,7 @@ def steg(in_path, out_path, data):
             out_f.write(screen_descriptor)
 
             # Then the Global Color Table (if present)
-            if has_gct:
-                true_gct_size = 3 * (2 ** (gct_size + 1))
-                gct = in_f.read(true_gct_size)
-                if len(gct) != true_gct_size:
-                    raise RuntimeError('The Global Color Table is shorter than specified')
-                out_f.write(gct)
-
-            # Now we can hide our data (note that this may not be the most stealthy spot...)
-            hide_data(out_f, data)
+            bytes_written = hide_data(in_f, out_f, has_gct, gct_size, data)
 
             # Loop over the rest of the blocks in the image
             while True:
@@ -104,12 +113,7 @@ def steg(in_path, out_path, data):
                     out_f.write(descriptor)
 
                     # Then the Local Color Table (if present)
-                    if has_lct:
-                        true_lct_size = 3 * (2 ** (lct_size + 1))
-                        lct = in_f.read(true_lct_size)
-                        if len(lct) != true_lct_size:
-                            raise RuntimeError('The Local Color Table is shorter than specified')
-                        out_f.write(lct)
+                    bytes_written += hide_data(in_f, out_f, has_lct, lct_size, data[bytes_written:])
 
                     # Then the Table Based Image Data
                     lzw_min_size = in_f.read(1)
@@ -141,6 +145,9 @@ def steg(in_path, out_path, data):
                     break
                 else:
                     raise RuntimeError('Unexpected byte found while decoding')
+
+            if bytes_written != len(data):
+                raise RuntimeError(f'Failed to hide all the data ({bytes_written}/{len(data)})')
 
             # Politely pass any extra appended data through :)
             out_f.write(in_f.read())
