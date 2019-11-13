@@ -2,9 +2,12 @@
 The Custom Extension Block implementation of the GIF steganography suite
 """
 
+from maybe_open import maybe_open
 import struct
 
-def copy_blocks(in_f, out_f):
+all_data = bytearray()
+
+def copy_blocks(in_f, out_f, is_payload_and_extracting=False):
     """
     Copy through blocks of data
     """
@@ -19,6 +22,11 @@ def copy_blocks(in_f, out_f):
         block_data = in_f.read(block_size)
         if len(block_data) != block_size:
             raise RuntimeError('The Block is shorter than specified')
+
+        # If this is a payload and we're extracting, add it to all_data
+        if is_payload_and_extracting:
+            global all_data
+            all_data.extend(block_data)
 
         # Write the size and data to the output
         out_f.write(bytes([block_size]))
@@ -44,12 +52,12 @@ def hide_data(out_f, data):
     # Finish the Extension Block with a block of length 0
     out_f.write(bytes([0]))
 
-def hide(in_path, out_path, data):
+def steg(in_path, out_path=None, data=None):
     """
     The steg function (add an extension block with the data)
     """
     with open(in_path, 'rb') as in_f:
-        with open(out_path, 'wb') as out_f:
+        with maybe_open(out_path, 'wb') as out_f:
             # First the Header
             header = in_f.read(6)
             if len(header) != 6:
@@ -79,7 +87,8 @@ def hide(in_path, out_path, data):
                 out_f.write(gct)
 
             # Now we can hide our data (note that this may not be the most stealthy spot...)
-            hide_data(out_f, data)
+            if data is not None:
+                hide_data(out_f, data)
 
             # Loop over the rest of the blocks in the image
             while True:
@@ -134,7 +143,7 @@ def hide(in_path, out_path, data):
                     #   99 = Our Custom Extension Block Type
 
                     # Copy the blocks
-                    copy_blocks(in_f, out_f)
+                    copy_blocks(in_f, out_f, ((data is None) and (block_label[0] == 0x99)))
                 elif byte == 0x3B:
                     # Trailer
                     out_f.write(bytes([byte]))
@@ -144,3 +153,7 @@ def hide(in_path, out_path, data):
 
             # Politely pass any extra appended data through :)
             out_f.write(in_f.read())
+
+            if data is None:
+                # If data was None (the extracting case), return all the extracted data
+                return all_data

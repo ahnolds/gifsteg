@@ -66,12 +66,12 @@ def main():
         out_dir = os.path.dirname(args.out_file)
         if out_dir and not os.path.exists(out_dir):
             os.makedirs(out_dir)
-        # Call the hiding function from the chosen module
-        module.hide(args.in_file, args.out_file, args.payload.encode('utf-8'))
+        # Call the chosen steg function, passing input, output, and payload to cause hiding
+        module.steg(args.in_file, args.out_file, args.payload.encode('utf-8'))
     elif args.action == 'extract':
-        # Call the extracting function from the chosen module
-        data = module.extract(in_path)
-        print(data)
+        # Call the chosen steg function, passing only input to cause extraction
+        data = module.steg(args.in_file)
+        print(data.decode('utf-8'))
 
     return 0
 

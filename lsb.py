@@ -2,7 +2,10 @@
 The LSB implementation of the GIF steganography suite
 """
 
+from maybe_open import maybe_open
 import struct
+
+all_data = bytearray()
 
 def copy_blocks(in_f, out_f):
     """
@@ -27,6 +30,36 @@ def copy_blocks(in_f, out_f):
         # Length zero block signals the end of the data
         if block_size == 0:
             break
+
+def extract_data(in_f, has_ct, ct_size):
+    """
+    Extract the data from the color table and add it to all_data
+    """
+    global all_data
+    if has_ct:
+        true_ct_size = 3 * (2 ** (ct_size + 1))
+        ct = bytearray(in_f.read(true_ct_size))
+        if len(ct) != true_ct_size:
+            raise RuntimeError('The Color Table is shorter than specified')
+
+        # Extract as much data into the Color Table as possible
+        # Use only one-byte chunks to avoid complication, so a 15 byte color table will
+        # contain one byte of data across the first 8 bytes and no data in the last 7
+        num_bytes = true_ct_size // 8
+        for index in range(num_bytes):
+            byte = 0
+            byte |= (ct[index * 8 + 0] & 0b00000001) << 7
+            byte |= (ct[index * 8 + 1] & 0b00000001) << 6
+            byte |= (ct[index * 8 + 2] & 0b00000001) << 5
+            byte |= (ct[index * 8 + 3] & 0b00000001) << 4
+            byte |= (ct[index * 8 + 4] & 0b00000001) << 3
+            byte |= (ct[index * 8 + 5] & 0b00000001) << 2
+            byte |= (ct[index * 8 + 6] & 0b00000001) << 1
+            byte |= (ct[index * 8 + 7] & 0b00000001) << 0
+
+            # Add the extracted byte if there is still data remaining
+            if len(all_data) == 0 or len(all_data) <= all_data[0]:
+                all_data.append(byte)
 
 def hide_data(in_f, out_f, has_ct, ct_size, data):
     """
@@ -61,12 +94,19 @@ def hide_data(in_f, out_f, has_ct, ct_size, data):
         # No Color Table => No space to hide stuff
         return 0
 
-def hide(in_path, out_path, data):
+def steg(in_path, out_path=None, data=None):
     """
     The steg function (use the LSB of the color table entries to hide the data)
     """
+
+    # Must encode the length of the data so we know how much to read when extracting
+    if data is not None:
+        data_array = bytearray(data)
+        data_array.insert(0, len(data))
+        data = data_array
+
     with open(in_path, 'rb') as in_f:
-        with open(out_path, 'wb') as out_f:
+        with maybe_open(out_path, 'wb') as out_f:
             # First the Header
             header = in_f.read(6)
             if len(header) != 6:
@@ -88,7 +128,10 @@ def hide(in_path, out_path, data):
             out_f.write(screen_descriptor)
 
             # Then the Global Color Table (if present)
-            bytes_written = hide_data(in_f, out_f, has_gct, gct_size, data)
+            if data is not None:
+                bytes_written = hide_data(in_f, out_f, has_gct, gct_size, data)
+            else:
+                extract_data(in_f, has_gct, gct_size)
 
             # Loop over the rest of the blocks in the image
             while True:
@@ -113,7 +156,10 @@ def hide(in_path, out_path, data):
                     out_f.write(descriptor)
 
                     # Then the Local Color Table (if present)
-                    bytes_written += hide_data(in_f, out_f, has_lct, lct_size, data[bytes_written:])
+                    if data is not None:
+                        bytes_written += hide_data(in_f, out_f, has_lct, lct_size, data[bytes_written:])
+                    else:
+                        extract_data(in_f, has_lct, lct_size)
 
                     # Then the Table Based Image Data
                     lzw_min_size = in_f.read(1)
@@ -144,10 +190,16 @@ def hide(in_path, out_path, data):
                     out_f.write(bytes([byte]))
                     break
                 else:
-                    raise RuntimeError('Unexpected byte found while decoding')
-
-            if bytes_written != len(data):
-                raise RuntimeError(f'Failed to hide all the data ({bytes_written}/{len(data)})')
+                    raise RuntimeError(f'Unexpected byte {hex(byte)} found while decoding')
 
             # Politely pass any extra appended data through :)
             out_f.write(in_f.read())
+
+            if data is not None:
+                # Verify that we wrote all the data
+                if bytes_written != len(data):
+                    raise RuntimeError(f'Failed to hide all the data ({max(0, bytes_written - 1)}/{len(data) - 1})')
+            else:
+                # If data was None (the extracting case), return all the extracted data
+                # Don't include the hidden length byte...
+                return all_data[1:]
