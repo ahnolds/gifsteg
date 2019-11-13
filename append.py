@@ -4,7 +4,7 @@ The append implementation of the GIF steganography suite
 
 import shutil
 
-def steg(in_path, out_path, data):
+def hide(in_path, out_path, data):
     """
     The steg function (append data)
     """

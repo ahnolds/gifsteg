@@ -44,7 +44,7 @@ def hide_data(out_f, data):
     # Finish the Extension Block with a block of length 0
     out_f.write(bytes([0]))
 
-def steg(in_path, out_path, data):
+def hide(in_path, out_path, data):
     """
     The steg function (add an extension block with the data)
     """

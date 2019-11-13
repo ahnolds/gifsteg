@@ -61,7 +61,7 @@ def hide_data(in_f, out_f, has_ct, ct_size, data):
         # No Color Table => No space to hide stuff
         return 0
 
-def steg(in_path, out_path, data):
+def hide(in_path, out_path, data):
     """
     The steg function (use the LSB of the color table entries to hide the data)
     """
