@@ -56,7 +56,8 @@ def main():
         import lsb
         module = lsb
     elif args.shuffle:
-        raise NotImplementedError('Shuffle steganography not yet implemented')
+        import shuffle
+        module = shuffle
     else:
         raise RuntimeError('No steganography method selected')
    
