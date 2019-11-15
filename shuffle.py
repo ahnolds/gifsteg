@@ -2,11 +2,12 @@
 The shuffle implementation of the GIF steganography suite
 """
 
+from collections import OrderedDict
 from math import factorial
 from maybe_open import maybe_open
 import struct
 
-all_data = bytearray()
+all_data = list()
 
 def copy_blocks(in_f, out_f):
     """
@@ -43,12 +44,33 @@ def extract_data(in_f, has_ct, ct_size):
         if len(ct) != true_ct_size:
             raise RuntimeError('The Color Table is shorter than specified')
 
-        # TODO
+        # Get the unique colors (RGB triples)
+        colors = [int(ct[i:i + 3].hex(), 16) for i in range(0, len(ct), 3)]
+        colors = list(OrderedDict.fromkeys(colors).keys())
+
+        # Pair the colors with their initial positions and sort
+        colors_and_positions = sorted(zip(colors, range(len(colors))))
+
+        # Extract the positions since that's all we actually need here
+        positions = [pos for color, pos in colors_and_positions]
+
+        # Reconstruct the data from the order
+        block_data = 0
+        for i in range(len(colors) - 1):
+            pos = positions[i]
+            block_data *= (len(colors) - i)
+            block_data += pos
+            # Shift subsequent colors down
+            for j in range(i + 1, len(colors)):
+                if positions[j] > pos:
+                    positions[j] -= 1
 
         # Add the extracted data to all_data
-        all_data.extend(block_data)
+        all_data.append(block_data)
 
-def hide_data(in_f, out_f, has_ct, ct_size, data):
+translation = list()
+
+def hide_data(in_f, out_f, has_ct, ct_size, data, bg_color_index=None, aspect_ratio=None):
     """
     Insert the data into the color table and write to the output file
     """
@@ -60,12 +82,14 @@ def hide_data(in_f, out_f, has_ct, ct_size, data):
 
         # Validate the data will fit
         if data > factorial(true_ct_size // 3) - 1:
-            raise RuntimeError(f'Cannot hide all the data')
+            raise RuntimeError('Cannot hide all the data')
 
         # Get the unique colors (RGB triples) and sort them with the natural ordering
-        colors = sorted(set(int(ct[i:i + 3].hex(), 16) for i in range(0, len(ct), 3)))
+        all_colors = [int(ct[i:i + 3].hex(), 16) for i in range(0, len(ct), 3)]
+        colors = list(OrderedDict.fromkeys(all_colors).keys())
+        colors.sort()
 
-        # Allocate the color's positions based on remainders mod (data)
+        # Allocate the colors' positions based on remainders mod (data)
         positions = [0 for _ in range(len(colors))]
         for i in range(len(colors)):
             positions[len(colors) - i - 1] = data % (i + 1)
@@ -74,8 +98,8 @@ def hide_data(in_f, out_f, has_ct, ct_size, data):
         # Re-order the colors based on these positions
         new_colors = [0 for _ in range(len(colors))]
         for i in range(len(colors)):
-            color = colors[i]
-            pos = positions[i]
+            color = colors[len(colors) - i - 1]
+            pos = positions[len(colors) - i - 1]
             # Shift colors up as needed to make room
             new_colors[pos + 1:] = new_colors[pos:-1]
             # Actually place the color
@@ -90,23 +114,41 @@ def hide_data(in_f, out_f, has_ct, ct_size, data):
         for pos in range(len(colors), len(ct) // 3):
             new_ct[pos * 3:pos * 3 + 3] = new_ct[pos * 3 - 3:pos * 3]
 
+        # Store the translation from original to modified color table so we can fix the image data later
+        global translation
+        translation = []
+        for color in all_colors:
+            for pos, new_color in enumerate(new_colors):
+                if color == new_color:
+                    translation.append(pos)
+                    break
+
+        # Write the modified bg_color_index and aspect ratio
+        if bg_color_index is not None:
+            out_f.write(bytes([translation[bg_color_index], aspect_ratio]))
+
         # Write out the modified Color Table
         out_f.write(new_ct)
 
         # Return the number of bytes written into the Color Table
-        return 0
+        return True
     else:
+        # Still have to save off the bg_colo_index and aspect_ratio
+        if bg_color_index is not None:
+            out_f.write(bytes([bg_color_index, aspect_ratio]))
         # No Color Table => No space to hide stuff
-        return 0
+        return False
 
 def steg(in_path, out_path=None, data=None):
     """
     The steg function (use the ordering of the color table entries to hide the data)
     """
 
+    hidden = False
+
     if data is not None:
         data_array = bytearray(data)
-        # Must start the message with a 1 to ensure the math works out nicely...
+        # Must start the message with a 1 to ensure the math works out nicely
         data_array.insert(0, 1)
         # Convert the message to a (propbably very large) integer
         data = int(data_array.hex(), 16)
@@ -126,16 +168,17 @@ def steg(in_path, out_path=None, data=None):
             screen_descriptor = in_f.read(7)
             if len(screen_descriptor) != 7:
                 raise RuntimeError('The Logical Screen Descriptor is too short to be valid')
-            width, heigh, packed, bg_color_index, aspect_ratio = struct.unpack('<2H3B', screen_descriptor)
+            width, height, packed, bg_color_index, aspect_ratio = struct.unpack('<2H3B', screen_descriptor)
             has_gct   = (packed & 0b10000000) >> 7
             color_res = (packed & 0b01110000) >> 4
             sort_flag = (packed & 0b00001000) >> 3
             gct_size  = (packed & 0b00000111) >> 0
-            out_f.write(screen_descriptor)
 
             # Then the Global Color Table (if present)
             if data is not None:
-                bytes_written = hide_data(in_f, out_f, has_gct, gct_size, data)
+                # Annoyingly, we can't write the bg_color_index until _after_ the color map changes
+                out_f.write(struct.pack('<2HB', width, height, packed))
+                hidden = hide_data(in_f, out_f, has_gct, gct_size, data, bg_color_index, aspect_ratio)
             else:
                 extract_data(in_f, has_gct, gct_size)
 
@@ -163,7 +206,8 @@ def steg(in_path, out_path=None, data=None):
 
                     # Then the Local Color Table (if present)
                     if data is not None:
-                        bytes_written += hide_data(in_f, out_f, has_lct, lct_size, data)
+                        # Hide a copy in each color map, this makes the re-coloring logic simpler
+                        hidden |= hide_data(in_f, out_f, has_lct, lct_size, data)
                     else:
                         extract_data(in_f, has_lct, lct_size)
 
@@ -184,8 +228,10 @@ def steg(in_path, out_path=None, data=None):
 
                     # Just as a reference (for our purposes, we can pass these through all the same)
                     #   F9 = Graphic Control
+                    #           TODO Should re-map the Transparent Color Index in this case
                     #   FE = Comment
                     #   01 = Plain Text
+                    #           TODO Should re-map the Text Foreground and Background Color Indices in this case
                     #   FF = Application
                     #   99 = Our Custom Extension Block Type
 
@@ -202,10 +248,18 @@ def steg(in_path, out_path=None, data=None):
             out_f.write(in_f.read())
 
             if data is not None:
-                # Verify that we wrote all the data
-                if bytes_written != 0:
-                    raise RuntimeError(f'Failed to hide all the data ({max(0, bytes_written - 1)}/{len(data) - 1})')
+                # If there was data to hide, make sure we hid it!
+                if not hidden:
+                    raise RuntimeError('Failed to hide the data')
             else:
                 # If data was None (the extracting case), return all the extracted data
-                # Don't include the hidden length byte...
-                return all_data[1:]
+                # Strip off the leading 1 that was added to make the math work
+                global all_data
+                all_data = [int(bin(datum)[3:], 2) for datum in all_data]
+                # Convert from the integer form back to a string
+                all_data = [bytes.fromhex(hex(datum)[2:]) for datum in all_data]
+                # Return the data
+                if len(set(all_data)) != 1:
+                    print('Warning: multiple different messages recovered from different color maps:')
+                    print(all_data)
+                return all_data[0]
