@@ -9,6 +9,17 @@ import struct
 
 all_data = list()
 
+def num_to_data_len(num):
+    """
+    Convert a permutation number to the length of data it represents
+    """
+    # Strip off the leading 1 that was added to make the math work
+    data = int(bin(num)[3:], 2)
+    # Convert from the integer form back to a string
+    data = hex(data)[2:]
+    # Return the length of the data
+    return len(data) // 2
+
 def copy_blocks(in_f, out_f):
     """
     Copy through blocks of data
@@ -111,7 +122,7 @@ def hide_data(in_f, out_f, has_ct, ct_size, data, bg_color_index=None, aspect_ra
 
         # Validate the data will fit
         if data > factorial(true_ct_size // 3) - 1:
-            raise RuntimeError('Cannot hide all the data')
+            raise RuntimeError(f'Failed to hide all the data ({num_to_data_len(factorial(true_ct_size // 3) - 1)}/{num_to_data_len(data)})')
 
         # Get the unique colors (RGB triples) and sort them with the natural ordering
         all_colors = [int(ct[i:i + 3].hex(), 16) for i in range(0, len(ct), 3)]
