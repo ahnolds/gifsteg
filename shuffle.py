@@ -33,6 +33,35 @@ def copy_blocks(in_f, out_f):
         if block_size == 0:
             break
 
+def remap_colors(in_f, out_f, lzw_min_size, image_size):
+    """
+    Un-compress the image data and re-map the color pointers
+    """
+    global translation
+    image = [0] * image_size;
+    pos = 0
+    # TODO initiliaze lzw params as needed
+    code_table = list(range((2 ** lzw_min_size) + 2))
+    while True:
+        # Read the block size
+        block_size = in_f.read(1)
+        if len(block_size) != 1:
+            raise RuntimeError('The Block is too short to be valid')
+        block_size, = struct.unpack('<B', block_size)
+
+        # Read the data in the block
+        block_data = in_f.read(block_size)
+        if len(block_data) != block_size:
+            raise RuntimeError('The Block is shorter than specified')
+
+        # Write the size and data to the output
+        out_f.write(bytes([block_size]))
+        out_f.write(block_data)
+
+        # Length zero block signals the end of the data
+        if block_size == 0:
+            break
+
 def extract_data(in_f, has_ct, ct_size):
     """
     Extract the data from the color table and add it to all_data
@@ -217,7 +246,7 @@ def steg(in_path, out_path=None, data=None):
                         raise RuntimeError('No LZW Minimum Code Size value')
                     lzw_min_size, = struct.unpack('<B', lzw_min_size)
                     out_f.write(bytes([lzw_min_size]))
-                    copy_blocks(in_f, out_f)
+                    remap_colors(in_f, out_f, lzw_min_size, width * height)
                 elif byte == 0x21:
                     # Extension Block
                     block_label = in_f.read(1)
