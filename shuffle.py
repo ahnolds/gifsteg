@@ -120,14 +120,14 @@ def hide_data(in_f, out_f, has_ct, ct_size, data, bg_color_index=None, aspect_ra
         if len(ct) != true_ct_size:
             raise RuntimeError('The Color Table is shorter than specified')
 
-        # Validate the data will fit
-        if data > factorial(true_ct_size // 3) - 1:
-            raise RuntimeError(f'Failed to hide all the data ({num_to_data_len(factorial(true_ct_size // 3) - 1)}/{num_to_data_len(data)})')
-
         # Get the unique colors (RGB triples) and sort them with the natural ordering
         all_colors = [int(ct[i:i + 3].hex(), 16) for i in range(0, len(ct), 3)]
         colors = list(OrderedDict.fromkeys(all_colors).keys())
         colors.sort()
+
+        # Validate the data will fit
+        if data > factorial(len(colors)) - 1:
+            raise RuntimeError(f'Failed to hide all the data ({num_to_data_len(factorial(len(colors)) - 1)}/{num_to_data_len(data)})')
 
         # Allocate the colors' positions based on remainders mod (data)
         positions = [0 for _ in range(len(colors))]
