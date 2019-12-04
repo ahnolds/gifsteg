@@ -20,6 +20,8 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-a', '--append', action='store_true',
                        help='Data goes after the GIF trailer')
+    group.add_argument('-c', '--comment', action='store_true',
+                       help='Data goes in a Comment Block')
     group.add_argument('-e', '--extension', action='store_true',
                        help='Data goes in a custom Extension Block')
     group.add_argument('-l', '--lsb', action='store_true',
@@ -49,6 +51,9 @@ def main():
     if args.append:
         import append
         module = append
+    elif args.comment:
+        import comment
+        module = comment
     elif args.extension:
         import extension
         module = extension
